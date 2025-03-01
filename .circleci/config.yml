@@ -1,0 +1,92 @@
+version: 2.1
+
+orbs:
+  node: circleci/node@5.1.0
+  browser-tools: circleci/browser-tools@1.4.0
+
+jobs:
+  test:
+    docker:
+      - image: cimg/node:20.10-browsers
+    steps:
+      - checkout
+      - browser-tools/install-chrome
+      - browser-tools/install-chromedriver
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Run linting
+          command: npm run lint
+      - run:
+          name: Run tests
+          command: npm test
+
+  build:
+    docker:
+      - image: cimg/node:20.10
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Build application
+          command: npm run build
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist
+            - node_modules
+
+  deploy-staging:
+    docker:
+      - image: cimg/node:20.10
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Deploy to Staging
+          command: |
+            echo "Deploying to staging server"
+            # Add deployment script here
+
+  deploy-production:
+    docker:
+      - image: cimg/node:20.10
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Deploy to Production
+          command: |
+            echo "Deploying to production server"
+            # Add deployment script here
+
+workflows:
+  version: 2
+  build-test-deploy:
+    jobs:
+      - test
+      - build:
+          requires:
+            - test
+      - deploy-staging:
+          requires:
+            - build
+          filters:
+            branches:
+              only: main
+      - hold-production-deploy:
+          type: approval
+          requires:
+            - deploy-staging
+          filters:
+            branches:
+              only: main
+      - deploy-production:
+          requires:
+            - hold-production-deploy
+          filters:
+            branches:
+              only: main 
