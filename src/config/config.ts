@@ -37,6 +37,31 @@ export interface Config {
       ttl: number;
     }
   };
+  security: {
+    auth: {
+      enabled: boolean;
+      jwtSecret: string;
+      tokenExpiration: string;
+      apiKeyHeader: string;
+    };
+    rateLimit: {
+      enabled: boolean;
+      windowMs: number;
+      maxRequests: number;
+    };
+    helmet: {
+      enabled: boolean;
+      contentSecurityPolicy: boolean;
+    };
+    cors: {
+      allowOrigins: string[];
+      allowMethods: string[];
+      allowHeaders: string[];
+      allowCredentials: boolean;
+      exposedHeaders: string[];
+      maxAge: number;
+    };
+  };
 }
 
 const config: Config = {
@@ -84,6 +109,45 @@ const config: Config = {
         ? parseInt(process.env.RESPONSE_CACHE_TTL, 10) 
         : 10 * 60 * 1000,
     }
+  },
+  security: {
+    auth: {
+      enabled: process.env.AUTH_ENABLED === 'true',
+      jwtSecret: process.env.JWT_SECRET || 'inspecta-default-jwt-secret-change-in-production',
+      tokenExpiration: process.env.TOKEN_EXPIRATION || '24h',
+      apiKeyHeader: process.env.API_KEY_HEADER || 'x-api-key',
+    },
+    rateLimit: {
+      enabled: process.env.RATE_LIMIT_ENABLED !== 'false',
+      windowMs: process.env.RATE_LIMIT_WINDOW_MS 
+        ? parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) 
+        : 15 * 60 * 1000, // 15 minutes
+      maxRequests: process.env.RATE_LIMIT_MAX_REQUESTS 
+        ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) 
+        : 100, // 100 requests per windowMs
+    },
+    helmet: {
+      enabled: process.env.HELMET_ENABLED !== 'false',
+      contentSecurityPolicy: process.env.CSP_ENABLED === 'true',
+    },
+    cors: {
+      allowOrigins: process.env.CORS_ALLOW_ORIGINS 
+        ? process.env.CORS_ALLOW_ORIGINS.split(',') 
+        : ['*'],
+      allowMethods: process.env.CORS_ALLOW_METHODS 
+        ? process.env.CORS_ALLOW_METHODS.split(',') 
+        : ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowHeaders: process.env.CORS_ALLOW_HEADERS 
+        ? process.env.CORS_ALLOW_HEADERS.split(',')
+        : ['Content-Type', 'Authorization', 'x-api-key'],
+      allowCredentials: process.env.CORS_ALLOW_CREDENTIALS === 'true',
+      exposedHeaders: process.env.CORS_EXPOSED_HEADERS 
+        ? process.env.CORS_EXPOSED_HEADERS.split(',')
+        : [],
+      maxAge: process.env.CORS_MAX_AGE 
+        ? parseInt(process.env.CORS_MAX_AGE, 10)
+        : 86400, // 24 hours
+    },
   },
 };
 
