@@ -1,6 +1,6 @@
 import { Page } from 'puppeteer';
 import { v4 as uuidv4 } from 'uuid';
-import LRUCache from 'lru-cache';
+import { LRUCache } from 'lru-cache';
 import config from '../config/config';
 
 /**

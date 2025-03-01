@@ -8,14 +8,20 @@ import { registerAllTools } from './mcp/tools';
 import { cacheMiddleware, cacheRoute } from './middleware/cacheMiddleware';
 import { BrowserPool } from './browser/BrowserPool';
 import { ResponseCache } from './browser/ResponseCache';
+import { setupSecurity } from './middleware/security';
 
 // Create Express application
 const app = express();
 
-// Middleware
-app.use(cors());
+// Basic middleware
 app.use(express.json());
 app.use(morgan('dev'));
+
+// Set up security middleware (Sprint 5.1)
+console.log('Initializing enterprise security features...');
+setupSecurity(app, {
+  // Override settings from config if needed
+});
 
 // Initialize performance optimization features (Sprint 4.2)
 console.log('Initializing performance optimization features...');
@@ -48,95 +54,114 @@ if (config.cache.enabled) {
   console.log('Response caching disabled');
 }
 
-// API routes
-app.use('/api', routes);
-
-// Cache stats endpoint
-app.get('/api/stats/cache', (_req, res) => {
-  const responseCache = ResponseCache.getInstance();
-  const cachedPages = browserPool.getCachedPageCount();
-  const cachedResponses = responseCache.getSize();
-  const browserCount = browserPool.getBrowserCount();
-  
+// Add security monitoring endpoint
+app.get('/api/stats/security', (req, res) => {
   res.json({
-    cacheEnabled: config.cache.enabled,
-    responseCacheEnabled: config.cache.responseCache.enabled,
-    stats: {
-      browserInstances: browserCount,
-      cachedPages,
-      cachedResponses,
-      maxBrowserInstances: config.browser.maxInstances,
-      maxPageCacheSize: config.cache.maxPageCacheSize,
-      maxResponseCacheSize: config.cache.responseCache.maxSize
+    status: 'secure',
+    auth: {
+      enabled: config.security.auth.enabled,
+      method: config.security.auth.enabled ? 'JWT+ApiKey' : 'None'
+    },
+    rateLimit: {
+      enabled: config.security.rateLimit.enabled,
+      window: `${config.security.rateLimit.windowMs / 60000} minutes`,
+      limit: config.security.rateLimit.maxRequests
+    },
+    helmet: {
+      enabled: config.security.helmet.enabled,
+      csp: config.security.helmet.contentSecurityPolicy
+    },
+    cors: {
+      origins: config.security.cors.allowOrigins.includes('*') ? 
+        'All' : config.security.cors.allowOrigins.join(', ')
     }
   });
 });
 
-// Default route
-app.get('/', (_req, res) => {
-  res.json({
-    name: 'InspectorAI API',
-    version: '1.0.0',
-    status: 'running',
-    performanceOptimized: true // Indicate Sprint 4.2 features are implemented
+// Performance monitoring endpoint
+app.get('/api/stats/cache', function(req, res) {
+  // Return metrics about the caching system
+  const browserPool = BrowserPool.getInstance();
+  
+  return res.json({
+    enabled: config.cache.enabled,
+    pageCacheSize: browserPool.getCachedPageCount(),
+    pageCacheMaxSize: config.cache.maxPageCacheSize,
+    pagesCached: browserPool.getCachedPageCount(),
+    browserInstances: browserPool.getBrowserCount()
   });
 });
 
-// Create and configure MCP server (if enabled)
-let mcpServer: InspectorAIMCPServer | null = null;
+// API routes
+app.use('/api', routes);
 
-if (config.features.mcpServer && config.features.mcpServer.enabled) {
-  const mcpPort = config.features.mcpServer.port || 3001;
-  mcpServer = new InspectorAIMCPServer(mcpPort);
+// Default route
+app.get('/', (req, res) => {
+  res.json({
+    name: 'InspectorAI',
+    status: 'operational',
+    features: [
+      'Screenshot capture',
+      'Console log analysis',
+      'Network monitoring',
+      'DOM manipulation',
+      'Image analysis',
+      'Performance optimization',
+      'Enterprise security'
+    ]
+  });
+});
+
+// Start the server
+const server = app.listen(config.server.port, () => {
+  console.log(`InspectorAI server listening on port ${config.server.port}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Security features: ${config.security.auth.enabled ? 'Enabled' : 'Disabled'}`);
+  console.log(`Caching: ${config.cache.enabled ? 'Enabled' : 'Disabled'}`);
   
-  // Register all tools with the MCP server
+  // Report resource counts
+  console.log(`Resources: ${browserPool.getBrowserCount()} browser instances`);
+  
+  if (config.cache.enabled) {
+    const responseCache = ResponseCache.getInstance();
+    console.log(`Cache capacity: ${config.cache.responseCache.maxSize} responses`);
+  }
+});
+
+// Start MCP server if enabled
+if (config.features.mcpServer.enabled) {
+  console.log('Starting MCP server...');
+  const mcpServer = new InspectorAIMCPServer(config.features.mcpServer.port);
+  
   registerAllTools(mcpServer);
   
-  // Start MCP server
-  mcpServer.start()
-    .then(() => {
-      console.log(`MCP Server running on port ${mcpPort}`);
-    })
-    .catch(err => {
-      console.error('Failed to start MCP server:', err);
-    });
+  mcpServer.start().then(() => {
+    console.log(`MCP server listening on port ${config.features.mcpServer.port}`);
+  });
 }
 
-// Start server
-const PORT = config.server.port;
-const HOST = config.server.host;
-
-app.listen(PORT, () => {
-  console.log(`Server running at http://${HOST}:${PORT}`);
-  console.log(`Performance optimizations: ${config.cache.enabled ? 'ENABLED' : 'DISABLED'}`);
-  console.log(`Page caching (${browserPool.getCachedPageCount()}/` + 
-              `${config.cache.maxPageCacheSize}): ${config.cache.enabled ? 'ENABLED' : 'DISABLED'}`);
-  console.log(`Response caching (${ResponseCache.getInstance().getSize()}/` + 
-              `${config.cache.responseCache.maxSize}): ${config.cache.responseCache.enabled ? 'ENABLED' : 'DISABLED'}`);
-});
-
-// Handle graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  
-  // Clean up resources
-  browserPool.closeAll().catch(err => {
-    console.error('Error closing browser pool:', err);
-  });
-  
+// Graceful shutdown handling
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  await server.close();
+  console.log('HTTP server closed');
+  // Close browser instances
+  await BrowserPool.getInstance().closeAll();
+  console.log('Browser instances closed');
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
-  console.log('SIGINT signal received: closing HTTP server');
-  
-  // Clean up resources
-  browserPool.closeAll().catch(err => {
-    console.error('Error closing browser pool:', err);
-  });
-  
+// Clean up resources on shutdown
+process.on('SIGINT', async () => {
+  console.log('Shutting down...');
+  // Close all browser instances
+  await BrowserPool.getInstance().closeAll();
+  console.log('All browser instances closed.');
   process.exit(0);
 });
 
-export default app;
-export { mcpServer }; 
+// Type for error parameter
+process.on('uncaughtException', (err: Error) => {
+  console.error('Uncaught exception:', err);
+  process.exit(1);
+}); 
